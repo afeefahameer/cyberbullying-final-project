@@ -1,0 +1,269 @@
+import json
+import os
+import random
+from datetime import datetime
+
+# --- Global Variables ---
+keywords = ["stupid", "dumb", "idiot", "moron", "retard", "dumbass", "idiotic", "you're dumb",
+  "ugly", "fat", "fatty", "pig", "cow", "ugliness",
+  "crazy", "psycho", "mental", "freak", "invalid", "error of nature",
+  "worthless", "you're nothing", "nobody cares", "nobody loves you",
+  "loser", "nobody likes you", "you're trash", "hopeless", "go away", "get lost",
+  "kill", "die", "go to hell", "burn in hell", "kill yourself",
+  "shit", "bullshit", "bastard", "bastards",
+  "douche", "douchebag", "scumbag", "jerk",
+  "scum", "trash", "disgusting", "creep", "weirdo", "worthless piece",
+  "shut up", "suck", "hate"]
+
+# New supportive messages to respond when no bad words are detected
+positive_responses = [
+    "✅ Your message looks good! Thank you for being respectful.",
+    "✅ All clear! Keep up the positive communication.",
+    "✅ Great job! Your message is appropriate and kind.",
+    "✅ No issues detected. Thanks for keeping our space friendly!",
+    "✅ Message approved! You're helping create a better environment."
+]
+
+# New warning messages
+warning_messages = [
+    "⚠ Please be more mindful of your language.",
+    "⚠ That's not very kind. Try rephrasing your message.",
+    "⚠ We encourage respectful communication here.",
+    "⚠ Let's keep things friendly and constructive."
+]
+
+# App settings (simplified)
+app_settings = {
+    "theme": "light",
+    "max_warnings": 3,
+    "auto_save": True,
+    "check_strictness": "normal"  # can be "strict", "normal", "relaxed"
+}
+
+flagged_messages = []
+user_warnings = {}
+banned_users = set()
+message_history = []
+MAX_HISTORY = 100  # Maximum number of messages to keep in history
+
+# --- Linked List Implementation ---
+class MessageNode:
+    """Node for linked list message storage"""
+    def __init__(self, data):
+        self.data = data
+        self.next = None
+
+class MessageLinkedList:
+    """Linked list for message history"""
+    def __init__(self):
+        self.head = None
+        self.tail = None
+        self.size = 0
+    
+    def append(self, data):
+        """Add a new message to the end of the linked list"""
+        new_node = MessageNode(data)
+        if self.head is None:
+            self.head = new_node
+            self.tail = new_node
+        else:
+            self.tail.next = new_node
+            self.tail = new_node
+        self.size += 1
+    
+    def to_list(self):
+        """Convert linked list to regular list"""
+        result = []
+        current = self.head
+        while current:
+            result.append(current.data)
+            current = current.next
+        return result
+    
+    def clear(self):
+        """Clear the linked list"""
+        self.head = None
+        self.tail = None
+        self.size = 0
+
+# Initialize the linked list for message history
+message_linked_list = MessageLinkedList()
+
+# --- Functions ---
+def load_data():
+    """Load saved data from files if they exist"""
+    global flagged_messages, user_warnings, banned_users, app_settings
+    
+    # Try to load flagged messages
+    try:
+        if os.path.exists("flagged_messages.json"):
+            with open("flagged_messages.json", "r") as f:
+                flagged_messages = json.load(f)
+    except Exception as e:
+        print(f"Failed to load flagged_messages.json: {e}")
+    
+    # Try to load user warnings
+    try:
+        if os.path.exists("user_warnings.json"):
+            with open("user_warnings.json", "r") as f:
+                user_warnings = json.load(f)
+    except Exception as e:
+        print(f"Failed to load user_warnings.json: {e}")
+    
+    # Try to load banned users
+    try:
+        if os.path.exists("banned_users.json"):
+            with open("banned_users.json", "r") as f:
+                banned_users = set(json.load(f))
+    except Exception as e:
+        print(f"Failed to load banned_users.json: {e}")
+
+def check_keywords(message):
+    """Check if message contains any keywords based on strictness setting"""
+    found = []
+    
+    # Adjust the matching based on strictness level
+    if app_settings["check_strictness"] == "strict":
+        # In strict mode, also check for partial word matches
+        for word in keywords:
+            if word in message.lower():
+                found.append(word)
+    elif app_settings["check_strictness"] == "normal":
+        # In normal mode, check for whole words or phrases
+        msg_lower = message.lower()
+        for word in keywords:
+            if word in msg_lower.split() or word in msg_lower:
+                found.append(word)
+    else:  # relaxed mode
+        # In relaxed mode, only exact matches count
+        msg_tokens = message.lower().split()
+        for word in keywords:
+            if word in msg_tokens:
+                found.append(word)
+                
+    return found
+
+def log_message(user, message, bad_words):
+    """Log a flagged message"""
+    entry = {
+        "user": user,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "message": message,
+        "detected_keywords": bad_words
+    }
+    flagged_messages.append(entry)
+    
+    if app_settings["auto_save"]:
+        try:
+            save_to_file("flagged_messages.json", flagged_messages)
+            save_to_file("user_warnings.json", user_warnings)
+            save_to_file("banned_users.json", list(banned_users))
+        except Exception as e:
+            print(f"Error saving data: {e}")
+
+def add_to_history(user, message, status):
+    """Add a message to the history"""
+    entry = {
+        "user": user,
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "message": message,
+        "status": status  # "approved", "flagged", or "banned"
+    }
+    message_history.append(entry)
+    message_linked_list.append(entry)  # Add to linked list
+    
+    # Keep history size manageable
+    if len(message_history) > MAX_HISTORY:
+        message_history.pop(0)
+        # Also remove from linked list if needed (simple approach)
+        if message_linked_list.size > MAX_HISTORY:
+            message_linked_list.head = message_linked_list.head.next
+            message_linked_list.size -= 1
+
+def save_to_file(filename, data):
+    """Save data to a file"""
+    try:
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Failed to save {filename}: {e}")
+
+def generate_report():
+    """Generate a report of keyword occurrences"""
+    report = {"keywords": {}, "users": {}}
+    
+    # Count keyword occurrences
+    for entry in flagged_messages:
+        for word in entry["detected_keywords"]:
+            report["keywords"][word] = report["keywords"].get(word, 0) + 1
+        
+        # Count per user
+        user = entry["user"]
+        report["users"][user] = report["users"].get(user, 0) + 1
+    
+    try:
+        save_to_file("report.json", report)
+    except Exception as e:
+        print("Error saving report:", e)
+    
+    return report
+
+def generate_history_statistics():
+    """Generate statistics from the message history"""
+    stats = {
+        "total_messages": len(message_history),
+        "approved_messages": 0,
+        "flagged_messages": 0,
+        "banned_messages": 0,
+        "users": {},
+        "active_hours": {}
+    }
+    
+    # Prevent division by zero
+    if stats["total_messages"] == 0:
+        return stats
+    
+    for entry in message_history:
+        # Count message types
+        if entry["status"] == "approved":
+            stats["approved_messages"] += 1
+        elif entry["status"] == "flagged":
+            stats["flagged_messages"] += 1
+        elif entry["status"] == "banned":
+            stats["banned_messages"] += 1
+        
+        # Count per user
+        user = entry["user"]
+        if user not in stats["users"]:
+            stats["users"][user] = {"total": 0, "approved": 0, "flagged": 0, "banned": 0}
+        
+        stats["users"][user]["total"] += 1
+        stats["users"][user][entry["status"]] += 1
+        
+        # Track activity hours
+        hour = entry["timestamp"].split(":")[0]
+        stats["active_hours"][hour] = stats["active_hours"].get(hour, 0) + 1
+    
+    return stats
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
